@@ -1,6 +1,10 @@
-using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using Polly;
+using Polly.Extensions.Http;
+using Polly.Timeout;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,11 +32,11 @@ builder.Services.AddHttpClient("ProxyClient", client =>
     var timeoutSeconds = builder.Configuration.GetValue<int>("ProxySettings:TimeoutSeconds", 5);
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 })
-.AddTransientHttpErrorPolicy(policyBuilder => policyBuilder
-    .CircuitBreakerAsync(
-        handledEventsAllowedBeforeBreaking: 3,
-        durationOfBreak: TimeSpan.FromSeconds(30)
-    ));
+.AddPolicyHandler(
+    HttpPolicyExtensions.HandleTransientHttpError()
+        .Or<TimeoutRejectedException>()
+        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)))
+);
 
 // Rate Limiting (optional)
 builder.Services.AddRateLimiter(options =>
