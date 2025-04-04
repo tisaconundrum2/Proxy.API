@@ -1,7 +1,6 @@
-public class ProxySettings
-{
-    public string? Proxy { get; set; }
-    public string? NoProxy { get; set; }
-    public string? ProxyUsername { get; set; }
-    public string? ProxyPassword { get; set; }
-}
+    public class ProxySettings
+    {
+        public int TimeoutSeconds { get; set; } = 5;
+        public int CacheExpirationSeconds { get; set; } = 60;
+        public bool EnableLogging { get; set; } = true;
+    }
