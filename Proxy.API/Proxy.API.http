@@ -1,6 +1,7 @@
 @Proxy.API_HostAddress = http://localhost:5223
 
-GET {{Proxy.API_HostAddress}}/weatherforecast/
-Accept: application/json
+### Proxy API Request
+GET {{Proxy.API_HostAddress}}/api/proxy?url=https://www.themealdb.com/api/json/v1/1/search.php?s=Arrabiat
 
-###
+### Health Check
+GET {{Proxy.API_HostAddress}}/health
