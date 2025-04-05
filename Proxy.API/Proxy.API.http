@@ -44,8 +44,6 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3O
 }
 
 ###
-GET {{API_HOST}}/api/proxy?url=https://jsearch.p.rapidapi.com/estimated-salary?job_title=nodejs%20developer&location=new%20york&location_type=ANY&years_of_experience=ALL HTTP/1.1
+GET  {{API_HOST}}/api/proxy?url=https://jsearch.p.rapidapi.com/estimated-salary?job_title=nodejs%20developer&location=new%20york&location_type=ANY&years_of_experience=ALL
 X-Rapidapi-Key: ad0d72c24cmshaa4f5f8ea1b929dp149c70jsn211e4118758e
 X-Rapidapi-Host: jsearch.p.rapidapi.com
-Host: jsearch.p.rapidapi.com
-
