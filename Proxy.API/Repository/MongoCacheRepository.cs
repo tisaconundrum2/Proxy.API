@@ -27,8 +27,19 @@ public class MongoCacheRepository
 
     public async Task SetCacheAsync(CachedResponse cache)
     {
+        if (string.IsNullOrEmpty(cache.Id))
+        {
+            cache.Id = ObjectId.GenerateNewId().ToString(); // Generate a new ObjectId if Id is null or empty
+        }
+
         var filter = Builders<CachedResponse>.Filter.Eq(x => x.Url, cache.Url);
-        await _collection.ReplaceOneAsync(filter, cache, new ReplaceOptions { IsUpsert = true });
+        var update = Builders<CachedResponse>.Update
+            .Set(x => x.Url, cache.Url)
+            .Set(x => x.Content, cache.Content)
+            .Set(x => x.ContentType, cache.ContentType)
+            .Set(x => x.ExpirationTime, cache.ExpirationTime);
+
+        await _collection.UpdateOneAsync(filter, update, new UpdateOptions { IsUpsert = true });
     }
 }
 
@@ -37,16 +48,16 @@ public class CachedResponse
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; }
-    
+
     [BsonElement("url")]
     public string Url { get; set; }
-    
+
     [BsonElement("content")]
     public string Content { get; set; }
-    
+
     [BsonElement("contentType")]
     public string ContentType { get; set; }
-    
+
     [BsonElement("expirationTime")]
     public DateTime ExpirationTime { get; set; }
 }
