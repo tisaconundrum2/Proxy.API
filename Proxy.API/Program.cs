@@ -4,6 +4,7 @@ using MongoDB.Driver;
 using Polly;
 using Polly.Extensions.Http;
 using Polly.Timeout;
+using RestSharp;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,15 +17,14 @@ builder.Services.AddHealthChecks();
 builder.Services.Configure<ProxySettings>(builder.Configuration.GetSection("ProxySettings"));
 builder.Services.Configure<MongoSettings>(builder.Configuration.GetSection("MongoSettings"));
 
-// Register the MongoDB client (singleton)
+// Register singletons for settings
 builder.Services.AddSingleton<IMongoClient>(serviceProvider =>
 {
     var mongoSettings = serviceProvider.GetRequiredService<IOptions<MongoSettings>>().Value;
     return new MongoClient(mongoSettings.ConnectionString);
 });
-
-// Register the MongoCacheRepository
 builder.Services.AddSingleton<MongoCacheRepository>();
+builder.Services.AddTransient(sp => new RestClient());
 
 // Configure HttpClient with Polly (optional; adjust as needed)
 builder.Services.AddHttpClient("ProxyClient", client =>
