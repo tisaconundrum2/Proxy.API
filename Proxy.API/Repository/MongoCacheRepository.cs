@@ -4,6 +4,7 @@ using MongoDB.Driver;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Bson;
 using Microsoft.Extensions.Options;
+using Proxy.API.Models;
 
 public class MongoCacheRepository
 {
@@ -41,23 +42,4 @@ public class MongoCacheRepository
 
         await _collection.UpdateOneAsync(filter, update, new UpdateOptions { IsUpsert = true });
     }
-}
-
-public class CachedResponse
-{
-    [BsonId]
-    [BsonRepresentation(BsonType.ObjectId)]
-    public string Id { get; set; }
-
-    [BsonElement("url")]
-    public string Url { get; set; }
-
-    [BsonElement("content")]
-    public string Content { get; set; }
-
-    [BsonElement("contentType")]
-    public string ContentType { get; set; }
-
-    [BsonElement("expirationTime")]
-    public DateTime ExpirationTime { get; set; }
 }
