@@ -55,7 +55,8 @@ namespace ProxyApi.Controllers
                 .Where(q => !string.Equals(q.Key, "url", StringComparison.OrdinalIgnoreCase))
                 .Select(q => $"{q.Key}={Uri.EscapeDataString(q.Value)}");
 
-            var fullUrl = $"{url}?{string.Join("&", queryParams)}";
+            var separator = url.Contains("?") ? "&" : "?";
+            var fullUrl = $"{url}{separator}{string.Join("&", queryParams)}";
 
             _logger.LogInformation("Reconstructed full URL: {FullUrl}", fullUrl);
 
@@ -95,7 +96,6 @@ namespace ProxyApi.Controllers
                 if (!response.IsSuccessful)
                 {
                     _logger.LogWarning("Error response from {Url}: {StatusCode}", fullUrl, response.StatusCode);
-                    return StatusCode((int)response.StatusCode, $"Error fetching the URL: {response.StatusCode}");
                 }
 
                 var responseContent = response.Content ?? string.Empty;
