@@ -9,6 +9,12 @@ using RestSharp;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Add Environment Variables
+// You can set environment variables like this:
+// export ProxySettings__TimeoutSeconds=10
+// export MongoSettings__ConnectionString="mongodb://localhost:27017"
+builder.Configuration.AddEnvironmentVariables();
+
 // Add controllers
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
