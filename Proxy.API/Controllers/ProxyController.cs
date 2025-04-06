@@ -105,7 +105,8 @@ namespace ProxyApi.Controllers
                 // Build the cache entry with an expiration time
                 var cacheEntry = new CachedResponse
                 {
-                    Url = cacheKey,
+                    Hash = cacheKey,
+                    Url = fullUrl,
                     Content = responseContent,
                     ContentType = contentType,
                     ExpirationTime = DateTime.UtcNow.AddSeconds(_settings.CacheExpirationSeconds)
@@ -203,7 +204,8 @@ namespace ProxyApi.Controllers
                 
                 var cacheEntry = new CachedResponse
                 {
-                    Url = cacheKey,
+                    Hash = cacheKey,
+                    Url = fullUrl,
                     Content = responseContent,
                     ContentType = contentType,
                     ExpirationTime = DateTime.UtcNow.AddSeconds(_settings.CacheExpirationSeconds)

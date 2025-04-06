@@ -17,10 +17,10 @@ public class MongoCacheRepository
         _collection = database.GetCollection<CachedResponse>(mongoSettings.CollectionName);
     }
 
-    public async Task<CachedResponse> GetCacheAsync(string url)
+    public async Task<CachedResponse> GetCacheAsync(string hash)
     {
         var filter = Builders<CachedResponse>.Filter.And(
-            Builders<CachedResponse>.Filter.Eq(x => x.Url, url),
+            Builders<CachedResponse>.Filter.Eq(x => x.Hash, hash),
             Builders<CachedResponse>.Filter.Gt(x => x.ExpirationTime, DateTime.UtcNow)
         );
         return await _collection.Find(filter).FirstOrDefaultAsync();
@@ -33,12 +33,14 @@ public class MongoCacheRepository
             cache.Id = ObjectId.GenerateNewId().ToString(); // Generate a new ObjectId if Id is null or empty
         }
 
-        var filter = Builders<CachedResponse>.Filter.Eq(x => x.Url, cache.Url);
+        var filter = Builders<CachedResponse>.Filter.Eq(x => x.Hash, cache.Hash);
         var update = Builders<CachedResponse>.Update
+            .Set(x => x.Hash, cache.Hash)
             .Set(x => x.Url, cache.Url)
             .Set(x => x.Content, cache.Content)
             .Set(x => x.ContentType, cache.ContentType)
-            .Set(x => x.ExpirationTime, cache.ExpirationTime);
+            .Set(x => x.ExpirationTime, cache.ExpirationTime)
+            .Set(x => x.CreatedAt, cache.CreatedAt);
 
         await _collection.UpdateOneAsync(filter, update, new UpdateOptions { IsUpsert = true });
     }
