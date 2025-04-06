@@ -1,4 +1,5 @@
-@API_HOST = http://localhost:5223
+# @API_HOST = http://localhost:5223
+@API_HOST = https://swiftlane-proxy-api-65310dfefa7e.herokuapp.com
 
 ### Proxy API Request
 GET {{API_HOST}}/api/proxy?url=https://www.themealdb.com/api/json/v1/1/search.php?s=Peanut
