@@ -139,14 +139,13 @@ namespace ProxyApi.Controllers
         public async Task<IActionResult> Post([FromQuery] string url, [FromBody] object content)
         {
             _logger.LogInformation("Received POST request for URL: {Url}", url);
-
+            
             if (string.IsNullOrWhiteSpace(url))
             {
                 _logger.LogWarning("Missing URL parameter in request");
                 return BadRequest("Missing 'url' query parameter.");
             }
-
-            // Validate the base URL format
+            
             if (!Uri.TryCreate(url, UriKind.Absolute, out Uri baseUri) ||
                 (baseUri.Scheme != "http" && baseUri.Scheme != "https"))
             {
@@ -154,24 +153,32 @@ namespace ProxyApi.Controllers
                 return BadRequest("Invalid URL format. Only HTTP and HTTPS URLs are supported.");
             }
 
-            // Reconstruct the full URL by appending all query parameters except 'url'
             var queryParams = Request.Query
                 .Where(q => !string.Equals(q.Key, "url", StringComparison.OrdinalIgnoreCase))
                 .Select(q => $"{q.Key}={Uri.EscapeDataString(q.Value)}");
-
+            
             var separator = url.Contains("?") ? "&" : "?";
             var fullUrl = $"{url}{separator}{string.Join("&", queryParams)}";
 
             _logger.LogInformation("Reconstructed full URL: {FullUrl}", fullUrl);
-
+            
+            var hashedContent = ComputeHash(JsonSerializer.Serialize(content));
+            var hashedUrl = ComputeHash(fullUrl);
+            var cacheKey = CreateCacheKey($"{hashedUrl}|{hashedContent}", Request.Headers);
+            var cachedResponse = await _cacheRepository.GetCacheAsync(cacheKey);
+            
+            if (cachedResponse != null && cachedResponse.ExpirationTime > DateTime.UtcNow)
+            {
+                _logger.LogInformation("Cache hit for URL: {Url}", fullUrl);
+                return Content(cachedResponse.Content, cachedResponse.ContentType);
+            }
+            
+            _logger.LogInformation("Cache miss for URL: {Url}", fullUrl);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                // Create RestRequest
                 var request = new RestRequest(fullUrl, Method.Post);
-
-                // Forward all headers from the incoming request
                 foreach (var header in Request.Headers)
                 {
                     if (!ShouldSkipHeader(header.Key))
@@ -180,30 +187,20 @@ namespace ProxyApi.Controllers
                         _logger.LogDebug("Forwarding header: {HeaderKey}={HeaderValue}", header.Key, header.Value);
                     }
                 }
+                
+                request.AddJsonBody(content);
 
-                // Add the request body
-                var jsonContent = System.Text.Json.JsonSerializer.Serialize(content);
-                request.AddStringBody(jsonContent, "application/json");
-
-                // Execute the request
                 var response = await _restClient.ExecuteAsync(request);
                 stopwatch.Stop();
 
                 if (!response.IsSuccessful)
                 {
-                    _logger.LogWarning("Error response from POST to {Url}: {StatusCode} - {ErrorMessage}",
-                        fullUrl, response.StatusCode, response.ErrorMessage);
-                    return StatusCode((int)response.StatusCode,
-                        $"Error posting to the URL: {response.StatusCode} - {response.ErrorMessage}");
+                    _logger.LogWarning("Error response from {Url}: {StatusCode}", fullUrl, response.StatusCode);
                 }
-
+                
                 var responseContent = response.Content ?? string.Empty;
                 var contentType = response.ContentType ?? "application/json";
-
-                // Build the cache key with a hash of the URL and request body
-                var contentHash = ComputeHash(jsonContent);
-                var cacheKey = $"{fullUrl}|POST|{contentHash}";
-
+                
                 var cacheEntry = new CachedResponse
                 {
                     Url = cacheKey,
@@ -211,38 +208,28 @@ namespace ProxyApi.Controllers
                     ContentType = contentType,
                     ExpirationTime = DateTime.UtcNow.AddSeconds(_settings.CacheExpirationSeconds)
                 };
-
-                // Persist the cache entry in MongoDB
+                
                 await _cacheRepository.SetCacheAsync(cacheEntry);
-
-                _logger.LogInformation("Posted to and cached response from {Url} in {ElapsedMs}ms",
+                
+                _logger.LogInformation("Fetched and cached response from {Url} in {ElapsedMs}ms",
                     fullUrl, stopwatch.ElapsedMilliseconds);
-
+                
                 return Content(responseContent, contentType);
             }
-            catch (TaskCanceledException)
+            catch (Exception)
             {
                 stopwatch.Stop();
-                _logger.LogWarning("Request to {Url} timed out after {ElapsedMs}ms",
-                    fullUrl, stopwatch.ElapsedMilliseconds);
-                return StatusCode(504, "The target endpoint is taking too long to process the POST request.");
-            }
-            catch (HttpRequestException ex)
-            {
-                stopwatch.Stop();
-                _logger.LogError(ex, "HTTP request error for {Url} after {ElapsedMs}ms",
-                    fullUrl, stopwatch.ElapsedMilliseconds);
-                return StatusCode(500, $"Error posting to the URL: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                stopwatch.Stop();
-                _logger.LogError(ex, "Unexpected error for {Url} after {ElapsedMs}ms",
-                    fullUrl, stopwatch.ElapsedMilliseconds);
-                return StatusCode(500, "An unexpected error occurred.");
+                _logger.LogError("Error fetching the URL: {Url} after {ElapsedMs}ms", fullUrl, stopwatch.ElapsedMilliseconds);
+
+                if (cachedResponse != null && cachedResponse.ExpirationTime > DateTime.UtcNow)
+                {
+                    _logger.LogInformation("Returning cached response for URL: {Url}", fullUrl);
+                    return Content(cachedResponse.Content, cachedResponse.ContentType);
+                }
+
+                return StatusCode(504, "The target endpoint is taking too long, and no cached response is available.");
             }
         }
-
 
         private bool ShouldSkipHeader(string headerName)
         {
