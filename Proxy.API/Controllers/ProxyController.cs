@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using RestSharp;
 using Proxy.API.Models;
+using System.Text.Json;
 
 namespace ProxyApi.Controllers
 {
@@ -145,40 +146,63 @@ namespace ProxyApi.Controllers
                 return BadRequest("Missing 'url' query parameter.");
             }
 
-            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri) ||
-                (uri.Scheme != "http" && uri.Scheme != "https"))
+            // Validate the base URL format
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri baseUri) ||
+                (baseUri.Scheme != "http" && baseUri.Scheme != "https"))
             {
                 _logger.LogWarning("Invalid URL format: {Url}", url);
                 return BadRequest("Invalid URL format. Only HTTP and HTTPS URLs are supported.");
             }
 
+            // Reconstruct the full URL by appending all query parameters except 'url'
+            var queryParams = Request.Query
+                .Where(q => !string.Equals(q.Key, "url", StringComparison.OrdinalIgnoreCase))
+                .Select(q => $"{q.Key}={Uri.EscapeDataString(q.Value)}");
+
+            var separator = url.Contains("?") ? "&" : "?";
+            var fullUrl = $"{url}{separator}{string.Join("&", queryParams)}";
+
+            _logger.LogInformation("Reconstructed full URL: {FullUrl}", fullUrl);
+
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                var client = _httpClientFactory.CreateClient("ProxyClient");
+                // Create RestRequest
+                var request = new RestRequest(fullUrl, Method.Post);
 
-                var jsonContent = System.Text.Json.JsonSerializer.Serialize(content);
-                var stringContent = new StringContent(
-                    jsonContent,
-                    Encoding.UTF8,
-                    "application/json");
-
-                var response = await client.PostAsync(url, stringContent);
-                stopwatch.Stop();
-
-                if (!response.IsSuccessStatusCode)
+                // Forward all headers from the incoming request
+                foreach (var header in Request.Headers)
                 {
-                    _logger.LogWarning("Error response from {Url}: {StatusCode}",
-                        url, response.StatusCode);
-                    return StatusCode((int)response.StatusCode,
-                        $"Error posting to the URL: {response.StatusCode}");
+                    if (!ShouldSkipHeader(header.Key))
+                    {
+                        request.AddHeader(header.Key, header.Value.ToString());
+                        _logger.LogDebug("Forwarding header: {HeaderKey}={HeaderValue}", header.Key, header.Value);
+                    }
                 }
 
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+                // Add the request body
+                var jsonContent = System.Text.Json.JsonSerializer.Serialize(content);
+                request.AddStringBody(jsonContent, "application/json");
+
+                // Execute the request
+                var response = await _restClient.ExecuteAsync(request);
+                stopwatch.Stop();
+
+                if (!response.IsSuccessful)
+                {
+                    _logger.LogWarning("Error response from POST to {Url}: {StatusCode} - {ErrorMessage}",
+                        fullUrl, response.StatusCode, response.ErrorMessage);
+                    return StatusCode((int)response.StatusCode,
+                        $"Error posting to the URL: {response.StatusCode} - {response.ErrorMessage}");
+                }
+
+                var responseContent = response.Content ?? string.Empty;
+                var contentType = response.ContentType ?? "application/json";
+
+                // Build the cache key with a hash of the URL and request body
                 var contentHash = ComputeHash(jsonContent);
-                var cacheKey = $"{url}|POST|{contentHash}";
+                var cacheKey = $"{fullUrl}|POST|{contentHash}";
 
                 var cacheEntry = new CachedResponse
                 {
@@ -188,10 +212,11 @@ namespace ProxyApi.Controllers
                     ExpirationTime = DateTime.UtcNow.AddSeconds(_settings.CacheExpirationSeconds)
                 };
 
+                // Persist the cache entry in MongoDB
                 await _cacheRepository.SetCacheAsync(cacheEntry);
 
                 _logger.LogInformation("Posted to and cached response from {Url} in {ElapsedMs}ms",
-                    url, stopwatch.ElapsedMilliseconds);
+                    fullUrl, stopwatch.ElapsedMilliseconds);
 
                 return Content(responseContent, contentType);
             }
@@ -199,25 +224,25 @@ namespace ProxyApi.Controllers
             {
                 stopwatch.Stop();
                 _logger.LogWarning("Request to {Url} timed out after {ElapsedMs}ms",
-                    url, stopwatch.ElapsedMilliseconds);
+                    fullUrl, stopwatch.ElapsedMilliseconds);
                 return StatusCode(504, "The target endpoint is taking too long to process the POST request.");
             }
             catch (HttpRequestException ex)
             {
                 stopwatch.Stop();
                 _logger.LogError(ex, "HTTP request error for {Url} after {ElapsedMs}ms",
-                    url, stopwatch.ElapsedMilliseconds);
+                    fullUrl, stopwatch.ElapsedMilliseconds);
                 return StatusCode(500, $"Error posting to the URL: {ex.Message}");
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
                 _logger.LogError(ex, "Unexpected error for {Url} after {ElapsedMs}ms",
-                    url, stopwatch.ElapsedMilliseconds);
+                    fullUrl, stopwatch.ElapsedMilliseconds);
                 return StatusCode(500, "An unexpected error occurred.");
             }
-
         }
+
 
         private bool ShouldSkipHeader(string headerName)
         {
